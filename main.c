@@ -33,6 +33,7 @@
 /*
  * Memory map
  *    0x00000100     [0x4] pointer to globals
+ *    0x00000180    [0x26] register save area
  *    0x00000200   [0x100] vectors
  *    0x00001000    [0x80] runtime counters
  *    0x00001080    [0x80] sprite data
@@ -89,13 +90,16 @@ chipset_init_early(void)
 void
 chipset_init(void)
 {
+    /* Ramsey config */
+//  *RAMSEY_CONTROL = RAMSEY_CONTROL_REFRESH0;  // Clobber burst/page/wrap
+
     /* Re-enable CIA interrupts (keyboard) */
     *INTENA   = INTENA_SETCLR |  // Set
                 INTENA_INTEN |   // Enable interrupts
                 INTENA_PORTS;    // CIA-A
 
     /* Enable interrupts for keyboard input */
-    *CIAA_ICR = CIA_ICR_SET | CIA_ICR_SP;  // Serial Port input
+    *CIAA_ICR = CIA_ICR_SET | CIA_ICR_SP;  // Serial Port input from keyboard
 //  *CIAA_ICR = CIA_ICR_SET | CIA_ICR_TA;
 }
 
@@ -109,8 +113,8 @@ globals_init(void)
     __asm("lea ___data_size,%0" : "=a" (data_size) ::);
     __asm("lea ___bss_size,%0"  : "=a" (bss_size) ::);
 
-    /* Set up globals (compile with -fbaserel for a5 is global pointer) */
-    uint8_t *globals = (uint8_t *) (GLOBALS_BASE);  // Globals begin at 64K
+    /* Set up globals (compile with -fbaserel for a4 to be globals pointer) */
+    uint8_t *globals = (uint8_t *) (GLOBALS_BASE);  // Globals begin at 192K
 
     memcpy(globals, data_start, data_size);
     memset(globals + data_size, 0, bss_size);
@@ -163,30 +167,64 @@ setup(void)
     serial_puts(RomID);
     serial_puts("\033[0m\n");
 
-    cache_init();
+    cache_init();        // Enable cache
     serial_putc('A');
     chipset_init();
-    serial_puts("\bB");
+    serial_putc('B');
     screen_init();
-    serial_puts("\bC");
+    serial_putc('C');
     show_string(RomID);
 
     timer_init();
-    serial_puts("\bD");
+    serial_putc('D');
+//  audio_init();
+//  serial_putc('E');
 //  serial_init();  // Now that ECLK is known
+    serial_putc('F');
     keyboard_init();
-    serial_puts("\bH");
+    serial_putc('G');
+//  mouse_init();
+    serial_putc('H');
     sprite_init();
-    serial_puts("\bI");
+    serial_putc('I');
     autoconfig_init();
-    serial_puts("\bJ");
+    serial_putc('J');
 
     rl_initialize();
     using_history();
-    serial_puts("\r");
+    serial_putc('K');
+//  test_draw();
+//  test_gadget();
+    serial_putc('\n');
     while (1) {
         main_poll();
     }
+#if 0
     *COLOR00 = 0x0f0c;  // Purple
     __asm("halt");
+#endif
+}
+
+void
+debug_cmdline(void)
+{
+    /* Set up globals (compile with -fbaserel for a4 to be globals pointer) */
+    uint8_t *globals = (uint8_t *) (GLOBALS_BASE);  // Globals begin at 192K
+    globals += 0x7ffe;  // offset that gcc applies to a4-relative globals
+    __asm("move.l %0,a4" :: "r" (globals));  // set up globals pointer
+    __asm("move.l a4,0x100");  // save globals pointer at fixed location
+
+//  globals_init();
+
+    /* Activate MED cmdline */
+//  gui_wants_all_input = 0;  // Turns off GUI stealing input
+//  cursor_visible |= 2;
+//  dbg_all_scroll = 25;
+    dbg_cursor_y = 25;
+
+    rl_initialize();
+    using_history();
+    while (1) {
+        main_poll();
+    }
 }

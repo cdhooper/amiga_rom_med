@@ -27,6 +27,7 @@
 uint dbg_cursor_x;    // Debug cursor column position on screen
 uint dbg_cursor_y;    // Debug cursor row position on screen
 uint dbg_all_scroll;  // Number of lines where all bitplanes should scroll
+uint displaybeep;     // DisplayBeep is active when non-zero
 
 static const uint8_t
 font_fixed_8x8[] =
@@ -288,6 +289,19 @@ WaitBlit(void)
     }
 }
 
+uint
+WaitBlit_timeout(void)
+{
+    uint timeout = 500000;
+    while (blitter_is_busy()) {
+        if (timeout-- == 0)
+            return (1);
+        __asm("nop");
+        __asm("nop");
+        __asm("nop");
+    }
+    return (0);
+}
 
 #if 0
 void
@@ -398,6 +412,12 @@ render_text_at(const char *str, uint maxlen, uint x, uint y,
     uint plane;
     uint len = 0;
     uint line;
+    static uint8_t recursion;
+
+    if (recursion)
+        return;
+
+    recursion = 1;
 
     if (maxlen > RENDER_BUF_CHARS)
         maxlen = RENDER_BUF_CHARS;
@@ -535,6 +555,7 @@ render_text_at(const char *str, uint maxlen, uint x, uint y,
             }
         }
     }
+    recursion = 0;
 }
 
 void
@@ -605,11 +626,33 @@ show_string(const uint8_t *str)
 }
 
 void
-show_string_at(const uint8_t *str, uint x, uint y)
+screen_beep_handle(void)
 {
-    dbg_cursor_x = x;
-    dbg_cursor_y = y;
-    show_string(str);
+    switch (--displaybeep) {
+        case 0:
+            *COLOR00 = 0x999;  // Normal
+            break;
+        case 1:
+            *COLOR00 = 0x666;  // Gray
+            break;
+        case 2:
+            *COLOR00 = 0x333;  // Dark gray
+            break;
+    }
+}
+
+void
+screen_displaybeep(void)
+{
+    displaybeep = 3;
+    *COLOR00 = 0x000;  // Black
+}
+
+void
+SetRGB4(void *vp, int32_t index, uint32_t red, uint32_t green, uint32_t blue)
+{
+    (void) vp;
+    *(COLOR00 + index) = (red << 8) | (green << 4) | blue;
 }
 
 void
@@ -659,6 +702,12 @@ screen_init(void)
     *DDFSTRT  = 0x3c;    // Bit plane DMA start
     *DDFSTOP  = 0xd4;    // Bit plane DMA stop
 
+    *DMACON   = DMACON_SET |     // Enable
+//              DMACON_BLTPRI |  // Blitter gets priority over CPU
+                DMACON_DMAEN |   // Enable DMA
+                DMACON_BPLEN |   // Bitplane DMA
+                DMACON_BLTEN;    // Blitter DMA
+
     /* Initialize the Blitter */
     *BLTAFWM  = 0xffff;
     *BLTALWM  = 0xffff;
@@ -668,24 +717,20 @@ screen_init(void)
     *BLTAPT   = 0;
     *BLTBPT   = 0;
     *BLTCPT   = 0;
-    *BLTDPT   = 0;
+    *BLTDPT   = 0x60000;  // Destination out of the way at 384 KB
     *BLTAMOD  = 0;
     *BLTBMOD  = 0;
     *BLTCMOD  = 0;
     *BLTDMOD  = 0;
-    *BLTCON0  = 0;
+    *BLTCON0  = 0xf0;  // A to D, no shift
     *BLTCON1  = 0;
-    *BLTSIZE  = 0;
-
-    serial_puts("\b1");
-
-    *DMACON   = DMACON_SET |     // Enable
-//              DMACON_BLTPRI |  // Blitter gets priority over CPU
-                DMACON_DMAEN |   // Enable DMA
-                DMACON_BPLEN |   // Bitplane DMA
-                DMACON_BLTEN;    // Blitter DMA
+    *BLTSIZE  = (1 << 6) | 0x1;  // 1 pixel high, 1 pixel wide
+    if (WaitBlit_timeout())
+        serial_puts("[Blitter timeout]\n");
 
     *INTENA   = INTENA_SETCLR |  // Set
                 INTENA_INTEN |   // Enable interrupts
                 INTENA_VERTB;    // Vertical blank
+
+    dbg_all_scroll = 25;  // If scrolling, start by scrolling all bitplanes
 }

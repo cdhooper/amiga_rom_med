@@ -48,11 +48,60 @@
 #define STACK_BASE   (RAM_BASE + 0x10000 - 4)
 #define GLOBALS_BASE (RAM_BASE + 0x10000)
 
+#define FULL_STACK_REGS 0x180
+#define SAVE_FULL_FRAME() __asm("movem.l d0-d7/a0-a7,0x180\n\t" \
+                                "move.w 0(sp),0x1c0\n\t" \
+                                "move.l 2(sp),0x1c2")
+
+typedef struct
+__attribute__((packed)) {
+    uint32_t d[6];
+    uint32_t a[5];
+    uint16_t sr;
+    uint32_t pc;
+} vblank_stack_regs_t;
+
+typedef struct
+__attribute__((packed)) {
+    uint32_t d[8];
+    uint32_t a[8];
+    uint16_t sr;
+    uint32_t pc;
+} full_stack_regs_t;
+
 uint vblank_ints;
 
 static void Default(void);
 void reset_hi(void);
 __attribute__((noinline)) static void irq_debugger(uint32_t sp_reg, uint mode);
+
+__attribute__((noinline))
+static void
+irq_debugger_msg(const char *msg)
+{
+    full_stack_regs_t *regs = (void *)(uintptr_t) FULL_STACK_REGS;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
+#pragma GCC diagnostic ignored "-Wstringop-overflow"
+    memcpy(regs + 1, regs, sizeof (*regs));
+    printf(msg);
+    irq_debugger(0, 1);
+}
+
+__attribute__ ((noinline)) static void
+Unknown_common(uint intnum)
+{
+    char buf[40];
+    sprintf(buf, "\nUnknown interrupt %u", intnum);
+    irq_debugger_msg(buf);
+    reset_cpu();
+}
+
+__attribute__ ((interrupt)) static void
+Default(void)
+{
+    Unknown_common(0);
+}
 
 __attribute__ ((interrupt)) void
 Audio(void)
@@ -65,6 +114,7 @@ Audio(void)
     GET_GLOBALS_PTR();
     *AUD0LEN = 2;
     *COLOR00 = 0x099;  // Cyan background
+//  audio_handler();
     RESTORE_A4();
     (*ADDR32(COUNTER0))++;  // counter
 }
@@ -105,8 +155,7 @@ Ports(void)
 __attribute__ ((interrupt)) static void
 AddrErr(void)
 {
-    serial_puts("Address Error\n");
-    irq_debugger(0, 0);
+    irq_debugger_msg("Address Error\n");
     reset_cpu();
 }
 
@@ -114,8 +163,7 @@ AddrErr(void)
 __attribute__ ((interrupt)) static void
 BusErr(void)
 {
-    serial_puts("Bus Error\n");
-    irq_debugger(0, 0);
+    irq_debugger_msg("Bus Error\n");
     reset_cpu();
 }
 
@@ -123,8 +171,7 @@ BusErr(void)
 __attribute__ ((interrupt)) static void
 IllInst(void)
 {
-    serial_puts("Illegal Instruction\n");
-    irq_debugger(0, 0);
+    irq_debugger_msg("Illegal Instruction\n");
     reset_cpu();
 }
 
@@ -132,8 +179,7 @@ IllInst(void)
 __attribute__ ((interrupt)) static void
 DivZero(void)
 {
-    serial_puts("Division by Zero\n");
-    irq_debugger(0, 0);
+    irq_debugger_msg("Division by Zero\n");
     reset_cpu();
 }
 
@@ -141,8 +187,7 @@ DivZero(void)
 __attribute__ ((interrupt)) static void
 TrapV(void)
 {
-    serial_puts("TrapV\n");
-    irq_debugger(0, 0);
+    irq_debugger_msg("TrapV\n");
     reset_cpu();
 }
 
@@ -150,8 +195,7 @@ TrapV(void)
 __attribute__ ((interrupt)) static void
 PrivVio(void)
 {
-    serial_puts("Privilege Violation\n");
-    irq_debugger(0, 0);
+    irq_debugger_msg("Privilege Violation\n");
     reset_cpu();
 }
 
@@ -159,8 +203,7 @@ PrivVio(void)
 __attribute__ ((interrupt)) static void
 ExLineA(void)
 {
-    serial_puts("Unimplemented Instruction (line A)\n");
-    irq_debugger(0, 0);
+    irq_debugger_msg("Unimplemented Instruction (line A)\n");
     reset_cpu();
 }
 
@@ -168,8 +211,7 @@ ExLineA(void)
 __attribute__ ((interrupt)) static void
 ExLineF(void)
 {
-    serial_puts("Unimplemented Instruction (line F)\n");
-    irq_debugger(0, 0);
+    irq_debugger_msg("Unimplemented Instruction (line F)\n");
     reset_cpu();
 }
 
@@ -177,8 +219,7 @@ ExLineF(void)
 __attribute__ ((interrupt)) static void
 ChkInst(void)
 {
-    serial_puts("Check Instruction\n");
-    irq_debugger(0, 0);
+    irq_debugger_msg("Check Instruction\n");
     reset_cpu();
 }
 
@@ -186,8 +227,7 @@ ChkInst(void)
 __attribute__ ((interrupt)) static void
 Trace(void)
 {
-    serial_puts("Instruction Trace\n");
-    irq_debugger(0, 0);
+    irq_debugger_msg("Instruction Trace\n");
     reset_cpu();
 }
 
@@ -195,8 +235,7 @@ Trace(void)
 __attribute__ ((interrupt)) static void
 SpurIRQ(void)
 {
-    serial_puts("Spurious IRQ\n");
-    irq_debugger(0, 0);
+    irq_debugger_msg("Spurious IRQ\n");
     reset_cpu();
 }
 
@@ -204,8 +243,7 @@ SpurIRQ(void)
 __attribute__ ((interrupt)) static void
 CopErr(void)
 {
-    serial_puts("Coprocessor Error\n");
-    irq_debugger(0, 0);
+    irq_debugger_msg("Coprocessor Error\n");
     reset_cpu();
 }
 
@@ -213,8 +251,7 @@ CopErr(void)
 __attribute__ ((interrupt)) static void
 FmtErr(void)
 {
-    serial_puts("Format Error\n");
-    irq_debugger(0, 0);
+    irq_debugger_msg("Format Error\n");
     reset_cpu();
 }
 
@@ -222,22 +259,23 @@ FmtErr(void)
 __attribute__ ((interrupt)) static void
 UninitI(void)
 {
-    serial_puts("Uninitialized Interrupt\n");
-    irq_debugger(0, 0);
+    irq_debugger_msg("Uninitialized Interrupt\n");
     reset_cpu();
 }
 
-__attribute__ ((interrupt)) void
+__attribute__ ((interrupt)) static void
 VBlank(void)
 {
+#define VBLANK_FULL_DEBUG
+    SAVE_A4();
+    GET_GLOBALS_PTR();
 #if 0
     static uint16_t mouse_quad_last;
     uint16_t mouse_quad_cur;
 #endif
+#ifndef VBLANK_FULL_DEBUG
     uint32_t local_sp = get_sp();
-
-    SAVE_A4();
-    GET_GLOBALS_PTR();
+#endif
 
     /*
      * Reset bitplane DMA pointers. This could also be done by the copper.
@@ -305,6 +343,7 @@ VBlank(void)
     uint y_end   = y_start + 9;
 #endif
 
+    /* Mouse pointer */
     if (sprite0_data != NULL) {
 #if 0
         /* Position cursor */
@@ -341,8 +380,12 @@ VBlank(void)
     }
 
     if (vblank_ints++ > 120) {  // 2 seconds
+#ifdef VBLANK_FULL_DEBUG
+        irq_debugger_msg("\nStuck?");
+#else
         printf("\nStuck?");
-        irq_debugger(local_sp, 1);
+        irq_debugger(local_sp, 2);
+#endif
     }
 
     RESTORE_A4();
@@ -377,48 +420,17 @@ Int29(void)
 __attribute__ ((interrupt)) void
 Int6(void)
 {
-    serial_puts("Int6");
-    irq_debugger(0, 0);
+    irq_debugger_msg("Int6\n");
     reset_cpu();
 }
 
 __attribute__ ((interrupt)) void
 Int7(void)
 {
-    serial_puts("Int7");
-    irq_debugger(0, 0);
+    irq_debugger_msg("Int7\n");
     reset_cpu();
 }
 #endif
-
-#define FULL_STACK_REGS 0x180
-#define SAVE_FULL_FRAME() __asm("movem.l d0-d7/a0-a7,0x180")
-
-#if 0
-__attribute__ ((interrupt)) void
-Default(void)
-{
-    SAVE_FULL_FRAME();
-    printf("\nUnknown interrupt");
-    irq_debugger(0, 0);
-    reset_cpu();
-}
-#endif
-
-__attribute__ ((noinline)) static void
-Unknown_common(uint intnum)
-{
-    SAVE_FULL_FRAME();
-    printf("\nUnknown interrupt %u", intnum);
-    irq_debugger(0, 0);
-    reset_cpu();
-}
-
-__attribute__ ((interrupt)) static void
-Default(void)
-{
-    Unknown_common(0);
-}
 
 __attribute__ ((interrupt)) static void Int12(void) { Unknown_common(12); }
 __attribute__ ((interrupt)) static void Int16(void) { Unknown_common(16); }
@@ -432,6 +444,41 @@ __attribute__ ((interrupt)) static void Int23(void) { Unknown_common(23); }
 __attribute__ ((interrupt)) static void Int25(void) { Unknown_common(25); }
 __attribute__ ((interrupt)) static void Int30(void) { Unknown_common(30); }
 __attribute__ ((interrupt)) static void Int31(void) { Unknown_common(31); }
+
+#define VECTOR_WRAP(func) void _##func(void) { SAVE_FULL_FRAME(); func(); }
+#define VECTOR(func) _##func
+
+VECTOR_WRAP(Audio);
+VECTOR_WRAP(VBlank);
+VECTOR_WRAP(BusErr);
+VECTOR_WRAP(AddrErr);
+VECTOR_WRAP(IllInst);
+VECTOR_WRAP(DivZero);
+VECTOR_WRAP(ChkInst);
+VECTOR_WRAP(TrapV);
+VECTOR_WRAP(PrivVio);
+VECTOR_WRAP(Trace);
+VECTOR_WRAP(ExLineA);
+VECTOR_WRAP(ExLineF);
+VECTOR_WRAP(Int12);
+VECTOR_WRAP(CopErr);
+VECTOR_WRAP(FmtErr);
+VECTOR_WRAP(UninitI);
+VECTOR_WRAP(Int16);
+VECTOR_WRAP(Int17);
+VECTOR_WRAP(Int18);
+VECTOR_WRAP(Int19);
+VECTOR_WRAP(Int20);
+VECTOR_WRAP(Int21);
+VECTOR_WRAP(Int22);
+VECTOR_WRAP(Int23);
+VECTOR_WRAP(SpurIRQ);
+VECTOR_WRAP(Int25);
+VECTOR_WRAP(Ports);
+VECTOR_WRAP(Int29);
+VECTOR_WRAP(Int30);
+VECTOR_WRAP(Int31);
+VECTOR_WRAP(Default);
 
 /*
  *  Vector Address Function  Description
@@ -484,14 +531,22 @@ __attribute__ ((interrupt)) static void Int31(void) { Unknown_common(31); }
 __attribute__ ((section (".text")))
 const void *vectors[] =
 {
-    INITSP, reset_hi, BusErr,  AddrErr, IllInst, DivZero, ChkInst, TrapV,
-    PrivVio, Trace,   ExLineA, ExLineF, Int12,   CopErr,  FmtErr,  UninitI,
-    Int16,   Int17,   Int18,   Int19,   Int20,   Int21,   Int22,   Int23,
-    SpurIRQ, Int25,   Ports,   VBlank,  Audio,   Int29,   Int30,   Int31,
-    Default, Default, Default, Default, Default, Default, Default, Default,
-    Default, Default, Default, Default, Default, Default, Default, Default,
-    Default, Default, Default, Default, Default, Default, Default, Default,
-    Default, Default, Default, Default, Default, Default, Default, Default,
+    INITSP,          reset_hi,        VECTOR(BusErr),  VECTOR(AddrErr),
+    VECTOR(IllInst), VECTOR(DivZero), VECTOR(ChkInst), VECTOR(TrapV),
+    VECTOR(PrivVio), VECTOR(Trace),   VECTOR(ExLineA), VECTOR(ExLineF),
+    VECTOR(Int12),   VECTOR(CopErr),  VECTOR(FmtErr),  VECTOR(UninitI),
+    VECTOR(Int16),   VECTOR(Int17),   VECTOR(Int18),   VECTOR(Int19),
+    VECTOR(Int20),   VECTOR(Int21),   VECTOR(Int22),   VECTOR(Int23),
+    VECTOR(SpurIRQ), VECTOR(Int25),   VECTOR(Ports),   VECTOR(VBlank),
+    VECTOR(Audio),   VECTOR(Int29),   VECTOR(Int30),   VECTOR(Int31),
+    VECTOR(Default), VECTOR(Default), VECTOR(Default), VECTOR(Default),
+    VECTOR(Default), VECTOR(Default), VECTOR(Default), VECTOR(Default),
+    VECTOR(Default), VECTOR(Default), VECTOR(Default), VECTOR(Default),
+    VECTOR(Default), VECTOR(Default), VECTOR(Default), VECTOR(Default),
+    VECTOR(Default), VECTOR(Default), VECTOR(Default), VECTOR(Default),
+    VECTOR(Default), VECTOR(Default), VECTOR(Default), VECTOR(Default),
+    VECTOR(Default), VECTOR(Default), VECTOR(Default), VECTOR(Default),
+    VECTOR(Default), VECTOR(Default), VECTOR(Default), VECTOR(Default),
 };
 
 void
@@ -506,58 +561,57 @@ vectors_init(void *base)
 //  __asm("move.w #0x2000, SR");
 }
 
-typedef struct
-__attribute__((packed)) {
-    uint32_t d[6];
-    uint32_t a[4];
-    uint16_t sr;
-    uint32_t pc;
-} vblank_stack_regs_t;
-
-typedef struct
-__attribute__((packed)) {
-    uint32_t d[8];
-    uint32_t a[8];
-    uint16_t sr;
-    uint32_t pc;
-} full_stack_regs_t;
-
+__attribute__ ((interrupt))
 __attribute__((noinline))
 static void
 irq_debugger(uint32_t sp_reg, uint mode)
 {
+    uint x;
     uint32_t *sp;
     extern uint8_t serial_active;
-    uint x;
-    static uint16_t stuck_count;
+    uint reg;
+
+    SAVE_A4();
+    GET_GLOBALS_PTR();
+
     vblank_ints = 0;
     serial_active = 1;
 
-    if (mode == 0) {
+    if ((mode == 0) || (mode == 1)) {
         full_stack_regs_t *regs = (void *)(uintptr_t) FULL_STACK_REGS;
-        uint reg;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Warray-bounds"
+#pragma GCC diagnostic ignored "-Wstringop-overflow"
+        if (mode == 0)
+            memcpy(regs + 1, regs, sizeof (*regs));
+        regs++;
+#if 0
         if ((regs->a[7] > 0x01000) && (regs->a[7] < 0x10000)) {
             /* Fixup A7 past local variables */
             sp_reg = regs->a[7] + 10 * sizeof (uint16_t);
             regs->sr = *ADDR16(sp_reg);
             regs->pc = *ADDR32(sp_reg + sizeof (uint16_t));
 //          sp_reg += 3 * sizeof (uint16_t);
+//          }
+#else
+        if ((regs->a[7] > 0x01000) && (regs->a[7] < 0x10000)) {
+            /* Fixup A7 past SR and PC */
+            sp_reg = regs->a[7] + 6;
+#endif
         } else {
             sp_reg = get_sp();
         }
         sp = (void *)(uintptr_t) sp_reg;
         printf("  SP %08x  PC %08x  SR %02x\n",
                sp_reg, regs->pc, regs->sr);
-        printf("  A ");
-        for (reg = 0; reg < 8; reg++) {
+        printf("  Ax ");
+        for (reg = 0; reg < ARRAY_SIZE(regs->a); reg++) {
             if (reg != 0)
                 printf(" ");
             printf("%08x", regs->a[reg]);
         }
-        printf("\n  D ");
-        for (reg = 0; reg < 8; reg++) {
+        printf("\n  Dx ");
+        for (reg = 0; reg < ARRAY_SIZE(regs->d); reg++) {
             if (reg != 0)
                 printf(" ");
             printf("%08x", regs->d[reg]);
@@ -573,37 +627,28 @@ irq_debugger(uint32_t sp_reg, uint mode)
         sp = (void *) (regs + 1);
         printf("  SP %08x  PC %08x  SR %02x\n",
                sp_reg, regs->pc, regs->sr);
-        printf("  D0 %08x  D1 %08x  D2 %08x  D3 %08x  D4 %08x  D5 %08x\n",
-               regs->d[0], regs->d[1], regs->d[2], regs->d[3],
-               regs->d[4], regs->d[5]);
-        printf("  A0 %08x  A1 %08x  A2 %08x  A3 %08x\n",
-               regs->a[0], regs->a[1], regs->a[2], regs->a[3]);
+        printf("  Ax ");
+        for (reg = 0; reg < ARRAY_SIZE(regs->a); reg++) {
+            if (reg != 0)
+                printf(" ");
+            printf("%08x", regs->a[reg]);
+        }
+        printf("\n  Dx ");
+        for (reg = 0; reg < ARRAY_SIZE(regs->d); reg++) {
+            if (reg != 0)
+                printf(" ");
+            printf("%08x", regs->d[reg]);
+        }
+        printf("\n");
     }
-    for (x = 0; x < 24; x++) {
+    for (x = 0; x < 32; x++) {
         if ((x & 7) == 0)
             printf("\n ");
         printf(" %08x", *(sp++));
     }
-    printf("\n");
+    printf("\nForcing cmdline...\n");
+    debug_cmdline();
+    reset_cpu();
 
-#if 0
-    /* Activate MED cmdline */
-    if (gui_wants_all_input & 1) {
-        gui_wants_all_input &= ~1;
-        cursor_visible |= 2;
-        dbg_all_scroll = 25;
-        dbg_cursor_y = 25;
-    }
-#endif
-    if (++stuck_count >= 10) {
-#if 1
-        printf("Quitting...\n");
-        while (1)
-            main_poll();
-#endif
-#if 0
-        printf("Resetting...\n");
-        reset_cpu();
-#endif
-    }
+    RESTORE_A4();
 }
