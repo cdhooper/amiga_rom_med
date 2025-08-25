@@ -27,14 +27,28 @@
 #define BITPLANE_1_BASE   (BITPLANE_0_BASE + BITPLANE_OFFSET)
 #define BITPLANE_2_BASE   (BITPLANE_1_BASE + BITPLANE_OFFSET)
 
-void show_char(uint ch);
-void show_char_at(uint ch, uint x, uint y);
-void show_string(const uint8_t *str);
-void show_string_at(const uint8_t *str, uint x, uint y);
-void blit(void);
-void screen_init(void);
+#define TEXTPEN      1  // Black
+#define HIGHLIGHTPEN 4  // Gold
 
+void show_char(uint ch);
+void show_string(const uint8_t *str);
+void render_text_at(const char *str, uint maxlen, uint x, uint y,
+                    uint fg_color, uint bg_color);
+void screen_init(void);
+void screen_beep_handle(void);
+void screen_displaybeep(void);
+void WaitBlit(void);
+void SetRGB4(void *vp, int32_t index, uint32_t red, uint32_t green,
+             uint32_t blue);
+
+extern uint cursor_x_start;  // Upper left pixel of editor area
+extern uint cursor_y_start;  // Upper right pixel of editor area
+extern uint cursor_x;        // Cursor left-right column position in editor area
+extern uint cursor_y;        // Cursor top-down row position in editor area
+extern uint cursor_visible;  // Cursor is visible on screen
 extern uint dbg_cursor_x;    // Debug cursor column position on screen
 extern uint dbg_cursor_y;    // Debug cursor row position on screen
+extern uint dbg_all_scroll;  // Count of lines where all bitplanes should scroll
+extern uint displaybeep;     // DisplayBeep is active when non-zero
 
 #endif /* _SCREEN_H */

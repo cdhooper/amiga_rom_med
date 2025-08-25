@@ -225,4 +225,6 @@ int putchar(int ch);
 int puts(const char *str);
 int getchar(void);
 
+extern volatile uint8_t gui_wants_all_input;  // GUI wants all keyboard input
+
 #endif /* _PRINTF_H */

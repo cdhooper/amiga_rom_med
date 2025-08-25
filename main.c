@@ -21,9 +21,11 @@
 #include "serial.h"
 #include "med_cmdline.h"
 #include "med_readline.h"
+#include "cpu_control.h"
 #include "autoconfig.h"
 #include "printf.h"
 #include "screen.h"
+#include "audio.h"
 #include "sprite.h"
 #include "timer.h"
 #include "util.h"
@@ -33,7 +35,7 @@
 /*
  * Memory map
  *    0x00000100     [0x4] pointer to globals
- *    0x00000180    [0x26] register save area
+ *    0x00000120    [0x50] register save area
  *    0x00000200   [0x100] vectors
  *    0x00001000    [0x80] runtime counters
  *    0x00001080    [0x80] sprite data
@@ -45,7 +47,7 @@
  *    0x00030000 [0x10000] globals
  */
 
-#define VERSION "0.2"
+#define VERSION "0.3"
 const char RomID[] = "ROM MED "VERSION" (" BUILD_DATE" "BUILD_TIME ")\n";
 
 #define VECTORS_BASE (RAM_BASE + 0x200)
@@ -70,6 +72,7 @@ chipset_init_early(void)
 {
     /* Shut down interrupts and DMA */
     *CIAA_ICR = 0x7f;    // Disable interrupt forwarding to chipset
+    *CIAB_ICR = 0x7f;    // Disable interrupt forwarding to chipset
     *INTENA   = 0x7fff;  // Disable interrupt forwarding to m68k
     *INTREQ   = 0x7fff;  // Reply to all interrupt requests
     *INTREQ   = 0x7fff;  // Reply to all interrupt requests (A4000 bug)
@@ -78,7 +81,8 @@ chipset_init_early(void)
     /* Stop timers */
     *CIAA_CRA  = 0x00;
     *CIAA_CRB  = 0x00;
-    *CIAA_CRA  = 0;
+    *CIAB_CRA  = 0x00;
+    *CIAB_CRB  = 0x00;
 
     /* Silence audio */
     *AUD0VOL  = 0;
@@ -145,23 +149,24 @@ reset_hi(void)
     __asm("jmp _setup");  // setup()
 }
 
-void
+int
 main_poll()
 {
-    cmdline();
-#if 0
-    mouse_poll();     // handle mouse buttons
-#endif
+    if (cmdline())
+        return (1);
+//  mouse_poll();     // handle mouse buttons
     keyboard_poll();  // handle key repeats
+    return (0);
 }
 
 void __attribute__ ((noinline))
 setup(void)
 {
     globals_init();
-    vectors_init((void *)VECTORS_BASE);
-    memset(ADDR8(0), 0xa5, 0x100);  // Help catch NULL pointer usage
     chipset_init_early();
+    memset(ADDR8(0), 0xa5, 0x100);  // Help catch NULL pointer usage
+    vectors_init((void *)VECTORS_BASE);
+    cpu_control_init();  // Get CPU type
     serial_init();
     serial_puts("\n\033[31m");
     serial_puts(RomID);
@@ -178,7 +183,7 @@ setup(void)
     timer_init();
     serial_putc('D');
 //  audio_init();
-//  serial_putc('E');
+    serial_putc('E');
 //  serial_init();  // Now that ECLK is known
     serial_putc('F');
     keyboard_init();
@@ -196,6 +201,7 @@ setup(void)
 //  test_draw();
 //  test_gadget();
     serial_putc('\n');
+    cursor_visible = 2;
     while (1) {
         main_poll();
     }
@@ -218,13 +224,14 @@ debug_cmdline(void)
 
     /* Activate MED cmdline */
 //  gui_wants_all_input = 0;  // Turns off GUI stealing input
-//  cursor_visible |= 2;
+    cursor_visible |= 2;
 //  dbg_all_scroll = 25;
     dbg_cursor_y = 25;
 
     rl_initialize();
     using_history();
     while (1) {
-        main_poll();
+        if (main_poll())
+            break;   // "quit" command entered
     }
 }

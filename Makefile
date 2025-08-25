@@ -7,11 +7,11 @@ PROG     := rom_med
 
 OBJDIR   := objs
 MED_SRCS := med_cmds.c mem_access.c med_cmdline.c med_readline.c db_disasm.c
-SRCS     := main.c autoconfig.c cache.c keyboard.c pcmds.c \
+SRCS     := main.c autoconfig.c cache.c keyboard.c mouse.c pcmds.c \
             printf.c reset.c scanf.c screen.c serial.c \
             sprite.c strtoll.c strtoull.c timer.c util.c \
-	    vectors.c $(MED_SRCS)
-#SRCS   += sm_msg.c cpu_control.c sm_msg_core.c
+	    vectors.c audio.c cpu_control.c $(MED_SRCS)
+#SRCS   += sm_msg.c sm_msg_core.c
 
 OBJS    := $(SRCS:%.c=$(OBJDIR)/%.o)
 MED_OBJS := $(MED_SRCS:%.c=$(OBJDIR)/%.o)
@@ -22,7 +22,7 @@ LD      := m68k-amigaos-ld
 DD	:= dd
 CFLAGS  := -Wall -Wextra -Wno-pointer-sign -Wno-format -Wno-strict-aliasing
 CFLAGS  += -Wno-sign-compare -fomit-frame-pointer
-CFLAGS  += -DROMFS -DEMBEDDED_CMD -fbaserel -resident -mcpu=68060
+CFLAGS  += -DROMFS -DSTANDALONE -DEMBEDDED_CMD -fbaserel -resident -mcpu=68060
 CFLAGS  += -DRAM_BASE=0x00000000
 #CFLAGS  += -DRAM_BASE=0x07e00000
 #LDFLAGS := -nostartfiles -nodefaultlibs -nostdlib

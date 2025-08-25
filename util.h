@@ -16,13 +16,17 @@
 #ifndef _UTIL
 #define _UTIL
 
+#ifndef ADDR8
 #define ADDR8(x)    ((uint8_t *)  ((uintptr_t)(x)))
 #define ADDR16(x)   ((uint16_t *) ((uintptr_t)(x)))
 #define ADDR32(x)   ((uint32_t *) ((uintptr_t)(x)))
+#endif
 
+#ifndef VADDR8
 #define VADDR8(x)    ((volatile uint8_t *)  ((uintptr_t)(x)))
 #define VADDR16(x)   ((volatile uint16_t *) ((uintptr_t)(x)))
 #define VADDR32(x)   ((volatile uint32_t *) ((uintptr_t)(x)))
+#endif
 
 #define BIT(x) (1U << (x))
 #define ARRAY_SIZE(x) ((sizeof (x) / sizeof ((x)[0])))
@@ -43,7 +47,7 @@ typedef unsigned int uint;
 
 #define SAVE_A4()         __asm("move.l a4,-(sp)")
 #define RESTORE_A4()      __asm("move.l (sp)+,a4")
-#define GET_GLOBALS_PTR() __asm("move.l 0x100,a4")
+#define GET_A4()          __asm("move.l 0x100,a4")
 
 #include <stddef.h>
 

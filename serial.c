@@ -21,6 +21,7 @@
 #include "screen.h"
 #include "amiga_chipset.h"
 #include "timer.h"
+#include "main.h"
 
 #define ECLOCK_NTSC 3579545
 #define ECLOCK_PAL  3546895
@@ -29,9 +30,13 @@ static volatile uint ser_in_rb_producer;  // Console input current writer pos
 static uint          ser_in_rb_consumer;  // Console input current reader pos
 static uint16_t      ser_in_rb[64];       // Console input ring buffer (FIFO)
 uint8_t              serial_active;       // Serial port is active
+volatile uint8_t     gui_wants_all_input; // Non-zero if GUI wants all key input
 static uint8_t       ser_out_wrapped;     // Serial output wrapped buffer
 static uint8_t       ser_out_buf[4096];   // Serial output
 static volatile uint16_t ser_out_prod;    // Serial output producer
+
+static const uint8_t input_med_magic[] = { 0x0d, 0x05, 0x04,         // ^M^E^D
+                                           0x13, 0x14, 0x0f, 0x10 }; // ^S^T^O^P
 
 /*
  * input_rb_put() stores a character in the input ring buffer.
@@ -43,8 +48,35 @@ static volatile uint16_t ser_out_prod;    // Serial output producer
 void
 input_rb_put(uint ch)
 {
+    static uint8_t magic_pos = 0;
     uint new_prod = ((ser_in_rb_producer + 1) % ARRAY_SIZE(ser_in_rb));
 
+    if ((ch & 0xff) != 0) {
+        if (((uint8_t) ch) == input_med_magic[magic_pos]) {
+            if (++magic_pos == 3) {
+                // ^M ^E ^D
+                gui_wants_all_input ^= 1;
+                if (gui_wants_all_input & 1) {
+                    /* MED deactivated */
+                    cursor_visible &= ~2;
+                } else {
+                    /* MED activated */
+                    cursor_visible |= 2;
+                    dbg_all_scroll = 25;
+                    dbg_cursor_y = 25;
+                }
+            } else if (magic_pos == ARRAY_SIZE(input_med_magic)) {
+                /* ^M ^E ^D ^S ^T ^O ^P */
+                while (1)
+                    main_poll();
+                magic_pos = 0;
+            }
+        } else {
+            magic_pos = 0;
+            if (((uint8_t) ch) == input_med_magic[magic_pos])
+                magic_pos = 1;
+        }
+    }
     if (new_prod == ser_in_rb_consumer) {
         // serial_putc('%');  // Emit here can lead to serial deadlock
         if ((ch & 0xff) != 0) {
@@ -71,7 +103,7 @@ input_rb_put(uint ch)
  * @return      The next input character.
  * @return      -1 = No input character is pending.
  */
-static int
+int
 input_rb_get(void)
 {
     uint ch;
@@ -96,7 +128,7 @@ serial_init(void)
     *SERPER = serper_divisor;
     *CIAB_PRA = 0x4f; // Set DTR
     *INTENA = INTENA_TBE | INTENA_RBF;  // disable interrupts
-    *INTREQ = INTREQ_TBE | INTREQ_RBF;  // clear interrupt
+    *INTREQ = INTREQ_TBE | INTREQ_RBF;  // clear interrupts
     *INTENA = INTENA_SETCLR | INTENA_RBF;  // enable interrupt
 }
 
@@ -224,6 +256,7 @@ putchar(int ch)
         serial_putc('\r');
         show_char('\r');
     }
+
     serial_putc((uint) ch);
     show_char((uint) ch);
     return (ch);

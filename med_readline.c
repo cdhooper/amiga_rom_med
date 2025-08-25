@@ -268,6 +268,9 @@ get_new_input_line(const char *prompt, char **line)
 
     *line = NULL;
 
+    if (gui_wants_all_input)
+        return (RC_NO_DATA);
+
     if (input_need_prompt) {
         input_need_prompt = 0;
         input_show_prompt(prompt);
@@ -676,13 +679,14 @@ rl_initialize(void)
 {
     static bool_t did_rl_init = FALSE;
 
+    input_need_prompt = 1;
+    input_clear();
+
     if (did_rl_init == TRUE)
         return (0);
 
-    did_rl_init        = TRUE;
-    input_need_prompt = 1;
+    did_rl_init       = TRUE;
     history_cur       = history_buf;
-    input_clear();
 
 #ifndef EMBEDDED_CMD
 #ifdef AMIGA

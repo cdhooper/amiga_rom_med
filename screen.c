@@ -24,6 +24,11 @@
 #define SCREEN_COLUMNS 80  // SCREEN_WIDTH / 8
 #define SCREEN_ROWS    26  // SCREEN_HEIGHT / 8
 
+uint cursor_x_start;  // Upper left pixel of editor area
+uint cursor_y_start;  // Upper right pixel of editor area
+uint cursor_x;        // Cursor left-right column position in editor area
+uint cursor_y;        // Cursor top-down row position in editor area
+uint cursor_visible;  // Cursor is visible on screen
 uint dbg_cursor_x;    // Debug cursor column position on screen
 uint dbg_cursor_y;    // Debug cursor row position on screen
 uint dbg_all_scroll;  // Number of lines where all bitplanes should scroll
@@ -279,7 +284,7 @@ blitter_is_busy(void)
  * A screen scroll was measured at about 8442 us
  *      (~9 serial characters at 9600 bps)
  */
-static void
+void
 WaitBlit(void)
 {
     while (blitter_is_busy()) {
@@ -662,20 +667,21 @@ screen_init(void)
                 (3 * BPLCON0_BPU) | // 3 bitplanes (8 colors)
                 BPLCON0_ECS;        // Enable ECS
     *BPLCON1  = 0;       // Horizontal scroll = 0
-    *BPLCON2  = 1;       // Sprite (cursor) lower priority than foreground
+//  *BPLCON2  = 1;       // Sprite (cursor) lower priority than foreground
+    *BPLCON2  = 0x0008;  // Mouse Pointer Sprite > foreground > Cursor Sprite
     *BPL1MOD  = 0;       // Modulo for odd bitplanes = 0
 //  *BPL1MOD  = 136;
 //  *BPL2MOD  = 136;
     *BPL2MOD  = 0;       // Modulo for even bitplanes = 0
     *BPL1DAT  = 0x0;
-    *COLOR00  = 0x004;   // Blue (background)
-    *COLOR01  = 0xeee;   // White (foreground)
-    *COLOR02  = 0x00f;   // Blue
-    *COLOR03  = 0xf0f;   // Red + Blue
-    *COLOR04  = 0x0ff;   // Green + Blue
-    *COLOR05  = 0xff0;   // Red + Green
-    *COLOR06  = 0x4cc;   // Green + Blue faded
-    *COLOR07  = 0xcc4;   // Red + Green faded
+    *COLOR00  = 0x999;   // Pen 0: Grey (background)
+    *COLOR01  = 0x000;   // Pen 1: Black
+    *COLOR02  = 0xfff;   // Pen 2: White
+    *COLOR03  = 0x68b;   // Pen 3: Lt.Blue
+    *COLOR04  = 0xdd5;   // Pen 4: Gold
+    *COLOR05  = 0xa92;   // Pen 5: Gold dim
+    *COLOR06  = 0x333;   // Pen 6: Dark Grey
+    *COLOR07  = 0xf44;   // Pen 7: Red (unused)
     *BPL1PT   = BITPLANE_0_BASE;  // Bitplane 0 base address
     *BPL2PT   = BITPLANE_1_BASE;  // Bitplane 1 base address
     *BPL3PT   = BITPLANE_2_BASE;  // Bitplane 2 base address
@@ -697,10 +703,101 @@ screen_init(void)
      *   DDFSTRT = ($81/2 - 4.5) AND $FFFC = $3C
      *   DDFSTOP = $3C + (640/4 - 8) = $D4
      */
-    *DIWSTRT  = 0x2c81;  // Start of screen window
-    *DIWSTOP  = 0x2cc1;  // End of screen window
+#if 0
+    *DIWSTRT  = 0x2c81;  // Start of screen window  (V=2c H=81)
+    *DIWSTOP  = 0x2cc1;  // End of screen window    (V=2c H=c1)
     *DDFSTRT  = 0x3c;    // Bit plane DMA start
     *DDFSTOP  = 0xd4;    // Bit plane DMA stop
+#endif
+
+#if 0
+    /*
+     * NTSC 640x200 60 Hz
+     *      cw dff08e 2c81 f4c1 3c d4
+     */
+    *DIWSTRT  = 0x2c81;  // Start of screen window  (V=2c H=81)
+    *DIWSTOP  = 0xf4c1;  // End of screen window    (V=f4 H=c1)
+    *DDFSTRT  = 0x3c;    // Bit plane DMA start
+    *DDFSTOP  = 0xd4;    // Bit plane DMA stop
+#endif
+#if 1
+    /*
+     * PAL 640x256 50 Hz
+     *      cw dff08e 2c81 2cc1 3c d4
+     */
+    *DIWSTRT  = 0x2c81;  // Start of screen window  (V=2c H=81)
+    *DIWSTOP  = 0x2cc1;  // End of screen window    (V=f4 H=c1)
+    *DDFSTRT  = 0x3c;    // Bit plane DMA start
+    *DDFSTOP  = 0xd4;    // Bit plane DMA stop
+#endif
+#if 0
+    *DIWSTRT  = 0x2c81;  // Start of screen window  (V=2c H=81)
+    *DIWSTOP  = 0xf4c1;  // End of screen window    (V=f4 H=c1)
+    *DDFSTRT  = 0x38;    // Bit plane DMA start
+    *DDFSTOP  = 0xd4;    // Bit plane DMA stop
+#endif
+#if 0
+#define MIN_NTSC_ROW    21
+#define MIN_PAL_ROW     29
+#define STANDARD_VIEW_X 0x81
+#define STANDARD_VIEW_Y 0x2C
+#define STANDARD_HBSTRT 0x06
+#define STANDARD_HSSTRT 0x0B
+#define STANDARD_HSSTOP 0x1C
+#define STANDARD_HBSTOP 0x2C
+#define STANDARD_VBSTRT 0x0122
+#define STANDARD_VSSTRT 0x02A6
+#define STANDARD_VSSTOP 0x03AA
+#define STANDARD_VBSTOP 0x1066
+
+#define VGA_COLORCLOCKS (STANDARD_COLORCLOCKS/2)
+#define VGA_TOTAL_ROWS  (STANDARD_NTSC_ROWS*2)
+#define VGA_DENISE_MIN  59
+#define MIN_VGA_ROW     29
+#define VGA_HBSTRT      0x08
+#define VGA_HSSTRT      0x0E
+#define VGA_HSSTOP      0x1C
+#define VGA_HBSTOP      0x1E
+#define VGA_VBSTRT      0x0000
+#define VGA_VSSTRT      0x0153
+#define VGA_VSSTOP      0x0235
+#define VGA_VBSTOP      0x0CCD
+
+    *HSSTRT   = STANDARD_HSSTRT; // 0x0005; // Horizontal centering
+    *DIWSTRT  = // 0x2c81;  // Start of screen window  (V=2c H=81)
+    *DIWSTOP  = // 0xf4c1;  // End of screen window    (V=f4 H=c1)
+    *DDFSTRT  = // 0x0018; // Bit plane DMA start
+    *DDFSTOP  = // 0x0058; // Bit plane DMA stop
+    *FMODE    = // 0xc00f; // BLP32 BPAGEM SPR32 SPAGEM  BSCAN2 SSCAN2
+    *HBSTRT   = STANDARD_HBSTRT; // 0x0009;
+    *HBSTOP   = STANDARD_HBSTOP; // 0x0017;
+    *HTOTAL   = // 0x0071;
+    *HSSTOP   = STANDARD_HSSTOP; // 0x0025;
+    *VBSTRT   = STANDARD_VBSTRT; // 0x0000;
+    *VSSTRT   = STANDARD_VSSTRT; // 0x0003;
+    *VSSTOP   = STANDARD_VSSTOP; // 0x0005;
+    *VBSTOP   = STANDARD_VBSTOP; // 0x001d;
+    *VTOTAL   = // 0x020e;
+    *BEAMCON0 = // 0x0B88;
+    *BPLCON2  = // 0x027f;
+    *BPLCON3  = // 0x00a3;
+    *BPLCON4  = // 0x0011;
+#endif
+
+#if 0
+    uint hr = 
+    uint vr = 
+    uint x;
+    uint y;
+
+    x = (hr * 0x81) >> 4;
+    y = (vr * 0x2c) >> 4;
+    io->diwstrt = (y << 8) | (x & 0xff);
+
+    y = (hr * 0xc1) >> 4;
+    y = (vr * 0xf4) >> 4;
+    *DIWSTOP  = (y << 8) | (x & 0xff);
+#endif
 
     *DMACON   = DMACON_SET |     // Enable
 //              DMACON_BLTPRI |  // Blitter gets priority over CPU
@@ -727,6 +824,70 @@ screen_init(void)
     *BLTSIZE  = (1 << 6) | 0x1;  // 1 pixel high, 1 pixel wide
     if (WaitBlit_timeout())
         serial_puts("[Blitter timeout]\n");
+
+#if 0
+    /* Implementation of multiscan 31.56 kHz doesn't seem to work */
+    *HSSTRT   = 0x0005; // Horizontal centering
+    *DDFSTRT  = 0x0018; // Bit plane DMA start
+    *DDFSTOP  = 0x0058; // Bit plane DMA stop
+    *FMODE    = 0xc00f; // BLP32 BPAGEM SPR32 SPAGEM  BSCAN2 SSCAN2
+    *HBSTRT   = 0x0009;
+    *HBSTOP   = 0x0017;
+    *HTOTAL   = 0x0071;
+    *VBSTRT   = 0x0000;
+    *VSSTRT   = 0x0003;
+    *VSSTOP   = 0x0005;
+    *VBSTOP   = 0x001d;
+    *VTOTAL   = 0x020e;
+    *BEAMCON0 = 0x0B88;
+    *BPLCON2  = 0x027f;
+    *BPLCON3  = 0x00a3;
+    *BPLCON4  = 0x0011;
+#endif
+#if 0
+    /* Implementation of dblPAL 50Hz 31.00 kHz doesn't seem to work */
+//  *BPLCON0  = 0xb201;
+//  *HSSTRT   = 0x0005; // Horizontal centering
+    *DDFSTRT  = 0x0028; // Bit plane DMA start
+    *DDFSTOP  = 0x0068; // Bit plane DMA stop
+    *FMODE    = 0xc00f; // BLP32 BPAGEM SPR32 SPAGEM  BSCAN2 SSCAN2
+    *HBSTRT   = 0x0009;
+    *HSSTOP   = 0x0025;
+    *HBSTOP   = 0x0031;
+    *HTOTAL   = 0x0077;
+    *VBSTRT   = 0x0000;
+    *VSSTRT   = 0x0003;
+    *VSSTOP   = 0x0005;
+    *VBSTOP   = 0x001d;
+    *VTOTAL   = 0x0258;
+    *BEAMCON0 = 0x0B88;
+    *BPLCON1  = 0x0000;
+    *BPLCON2  = 0x027f;
+    *BPLCON3  = 0x00a3;
+    *BPLCON4  = 0x0011;
+#endif
+#if 0
+    /* Implementation of dblNTSC 60Hz 31.00 kHz doesn't seem to work */
+//  *BPLCON0  = 0xb201;
+//  *HSSTRT   = 0x0005; // Horizontal centering
+    *DDFSTRT  = 0x0028; // Bit plane DMA start
+    *DDFSTOP  = 0x0068; // Bit plane DMA stop
+    *FMODE    = 0xc00f; // BLP32 BPAGEM SPR32 SPAGEM  BSCAN2 SSCAN2
+    *HBSTRT   = 0x0009;
+    *HSSTOP   = 0x0025;
+    *HBSTOP   = 0x0031;
+    *HTOTAL   = 0x0077;
+    *VBSTRT   = 0x0000;
+    *VSSTRT   = 0x0003;
+    *VSSTOP   = 0x0005;
+    *VBSTOP   = 0x001d;
+    *VTOTAL   = 0x01f4;
+    *BEAMCON0 = 0x0b88;
+    *BPLCON1  = 0x0000;
+    *BPLCON2  = 0x027f;
+    *BPLCON3  = 0x00a3;
+    *BPLCON4  = 0x0011;
+#endif
 
     *INTENA   = INTENA_SETCLR |  // Set
                 INTENA_INTEN |   // Enable interrupts
